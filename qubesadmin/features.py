@@ -25,6 +25,8 @@ import typing
 from typing import TypeVar
 from collections.abc import Iterator, Generator
 
+from qubesadmin.exc import QubesFeatureNotFoundError
+
 if typing.TYPE_CHECKING:
     from qubesadmin.vm import QubesVM
 
@@ -45,11 +47,22 @@ class Features:
     def __init__(self, vm: QubesVM):
         super().__init__()
         self.vm = vm
+        self._values_cache: dict[str, str] = {}
+        self._missing_cache: dict[str, str] = {}
+        self._names_cache: list[str] | None = None
+
+    def clear_cache(self) -> None:
+        '''Discard cached direct values, missing features and feature names.'''
+        self._values_cache.clear()
+        self._missing_cache.clear()
+        self._names_cache = None
 
     def __delitem__(self, key: str) -> None:
+        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Remove', key)
 
     def __setitem__(self, key: str, value: object) -> None:
+        self.clear_cache()
         if isinstance(value, bool):
             # False value needs to be serialized as empty string
             self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Set', key,
@@ -59,13 +72,36 @@ class Features:
                 str(value).encode())
 
     def __getitem__(self, item: str) -> str:
-        return self.vm.qubesd_call(
-            self.vm.name, 'admin.vm.feature.Get', item).decode('utf-8')
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+        if item in self._values_cache:
+            return self._values_cache[item]
+        if item in self._missing_cache:
+            # QubesException formats messages even without arguments.
+            raise QubesFeatureNotFoundError(
+                self._missing_cache[item].replace('%', '%%'))
+        try:
+            value = self.vm.qubesd_call(
+                self.vm.name, 'admin.vm.feature.Get', item).decode('utf-8')
+        except QubesFeatureNotFoundError as error:
+            if self.vm.app.cache_enabled:
+                self._missing_cache[item] = error.args[0]
+            raise
+        if self.vm.app.cache_enabled:
+            self._values_cache[item] = value
+        return value
 
     def __iter__(self) -> Iterator[str]:
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+        if self._names_cache is not None:
+            return iter(self._names_cache)
         qubesd_response = self.vm.qubesd_call(self.vm.name,
             'admin.vm.feature.List')
-        return iter(qubesd_response.decode('utf-8').splitlines())
+        names = qubesd_response.decode('utf-8').splitlines()
+        if self.vm.app.cache_enabled:
+            self._names_cache = names
+        return iter(names)
 
     keys = __iter__
 
@@ -98,6 +134,8 @@ class Features:
     def check_with_template(self, feature: str,
                             default: object = None) -> object:
         ''' Check if the vm's template has the specified feature. '''
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
         try:
             qubesd_response = self.vm.qubesd_call(
                 self.vm.name, 'admin.vm.feature.CheckWithTemplate', feature)

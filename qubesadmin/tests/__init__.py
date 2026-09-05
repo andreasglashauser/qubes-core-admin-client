@@ -24,11 +24,14 @@ import string
 import subprocess
 import traceback
 import unittest
+from collections.abc import Callable
+from unittest.mock import patch
 
 import io
 
 import qubesadmin
 import qubesadmin.app
+import qubesadmin.exc
 
 QREXEC_ALLOWED_CHARS = string.ascii_letters + string.digits + "_-+."
 
@@ -235,6 +238,25 @@ class QubesTestCase(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.app = QubesTest()
+
+    def assertCacheClearedBeforeQubesdCall(
+            self, cache: object, mutation: Callable[[], None], *,
+            has_error: bool) -> None:
+        flow = []
+        def call_qubesd(*_args, **_kwargs) -> bytes:
+            flow.append('request')
+            if has_error:
+                raise qubesadmin.exc.PermissionDenied('denied')
+            return b''
+        with patch.object(cache, 'clear_cache',
+                          side_effect=lambda: flow.append('clear')), \
+             patch.object(self.app, 'qubesd_call', side_effect=call_qubesd):
+            if has_error:
+                with self.assertRaises(qubesadmin.exc.PermissionDenied):
+                    mutation()
+            else:
+                mutation()
+        self.assertEqual(', '.join(flow), 'clear, request')
 
     def assertAllCalled(self):
         # pylint: disable=invalid-name

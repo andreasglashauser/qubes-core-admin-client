@@ -38,13 +38,22 @@ class Tags:
     def __init__(self, vm: QubesVM):
         super().__init__()
         self.vm = vm
+        self._membership_cache: dict[str, bool] = {}
+        self._names_cache: list[str] | None = None
+
+    def clear_cache(self) -> None:
+        '''Discard cached tag membership and tag names.'''
+        self._membership_cache.clear()
+        self._names_cache = None
 
     def remove(self, elem: str) -> None:
         '''Remove a tag'''
+        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Remove', elem)
 
     def add(self, elem: str) -> None:
         '''Add a tag'''
+        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Set', elem)
 
     def update(self, *others) -> None:
@@ -61,11 +70,25 @@ class Tags:
             pass
 
     def __iter__(self) -> Iterator[str]:
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+        if self._names_cache is not None:
+            return iter(self._names_cache)
         qubesd_response = self.vm.qubesd_call(self.vm.name,
             'admin.vm.tag.List')
-        return iter(qubesd_response.decode('utf-8').splitlines())
+        names = qubesd_response.decode('utf-8').splitlines()
+        if self.vm.app.cache_enabled:
+            self._names_cache = names
+        return iter(names)
 
     def __contains__(self, elem: str) -> bool:
         '''Does the VM have a tag'''
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+        if elem in self._membership_cache:
+            return self._membership_cache[elem]
         response = self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Get', elem)
-        return response == b'1'
+        is_present = response == b'1'
+        if self.vm.app.cache_enabled:
+            self._membership_cache[elem] = is_present
+        return is_present

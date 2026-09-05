@@ -843,6 +843,8 @@ class QubesBase(qubesadmin.base.PropertyHolder):
             assert isinstance(vm, qubesadmin.vm.QubesVM)
             vm._power_state_cache = None
             vm._properties_cache = {}
+            vm.features.clear_cache()
+            vm.tags.clear_cache()
             vm.devices.clear_cache()
         self._properties_cache = {}
 

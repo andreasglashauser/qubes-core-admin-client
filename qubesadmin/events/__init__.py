@@ -222,6 +222,21 @@ class EventsDispatcher:
         if self._reader_task:
             self._reader_task.cancel()
 
+    @staticmethod
+    def _invalidate_feature_tag_cache(subject: QubesVM | None,
+                                      event: str) -> None:
+        '''Invalidate direct feature and tag reads before event callbacks.'''
+        if subject is None:
+            return
+        if event == 'property-set:name':
+            subject.features.clear_cache()
+            subject.tags.clear_cache()
+        elif event.startswith(('domain-feature-set:',
+                               'domain-feature-delete:')):
+            subject.features.clear_cache()
+        elif event.startswith(('domain-tag-add:', 'domain-tag-delete:')):
+            subject.tags.clear_cache()
+
     def handle(self, subject_name: str | None, event: str, **kwargs) -> None:
         """Call handlers for given event"""
         # pylint: disable=protected-access
@@ -240,6 +255,7 @@ class EventsDispatcher:
             subject = None
         # invalidate cache if needed; call it before other handlers
         # as those may want to use cached value
+        self._invalidate_feature_tag_cache(subject, event)
         if event.startswith('property-set:') or \
                 event.startswith('property-reset:'):
             self.app._invalidate_cache(subject, event, **kwargs)
