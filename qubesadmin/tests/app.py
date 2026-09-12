@@ -1326,6 +1326,16 @@ class TC_30_QubesRemote(unittest.TestCase):
 
 
 class TC_30_ContainerCacheInvalidation(qubesadmin.tests.QubesTestCase):
+    def test_disabling_cache_invalidates_everything(self) -> None:
+        flow = []
+        with mock.patch.object(self.app, '_invalidate_cache_all',
+                               side_effect=lambda: flow.append('invalidate')):
+            for is_enabled in (False, True, True, False, False):
+                self.app.cache_enabled = is_enabled
+                flow.append(str(is_enabled))
+        self.assertEqual(', '.join(flow),
+                         'False, True, True, invalidate, False, False')
+
     def test_invalidate_existing_vm_containers_without_api_calls(self) -> None:
         first_vm = self.app.domains.get_blind('first-vm')
         second_vm = self.app.domains.get_blind('second-vm')

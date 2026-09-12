@@ -203,34 +203,14 @@ class TC_10_TagCache(qubesadmin.tests.QubesTestCase):
                 list(self.vm.tags)
         self.assertEqual(len(self.app.actual_calls), 2)
 
-    def test_disabled_reads_discard_cache(self) -> None:
+    def test_disabled_reads_are_not_cached(self) -> None:
+        self.app.cache_enabled = False
         self.expect_read('Get', b'0\x001', 'tag')
         self.expect_read('List', b'0\0tag\n')
-        contains(self.vm.tags, 'tag')
-        list(self.vm.tags)
-        self.app.cache_enabled = False
-        self.expect_read('Get', b'0\x000', 'tag')
-        self.expect_read('List', b'0\0')
-        values = ['tag' in self.vm.tags for _ in range(2)]
-        self.app.cache_enabled = True
-        values.append('tag' in self.vm.tags)
-        names = ','.join(self.vm.tags)
-        self.assertEqual(
-            f'{values!r}; {names!r}; calls={len(self.app.actual_calls)}',
-            "[False, False, False]; ''; calls=6")
-
-    def test_disabled_list_discards_membership(self) -> None:
-        self.expect_read('Get', b'0\x001', 'tag')
-        contains(self.vm.tags, 'tag')
-        self.app.cache_enabled = False
-        self.expect_read('List', b'0\0')
-        names = [','.join(self.vm.tags) for _ in range(2)]
-        self.app.cache_enabled = True
-        self.expect_read('Get', b'0\x000', 'tag')
-        is_present = 'tag' in self.vm.tags
-        self.assertEqual(
-            f'{names!r}; {is_present}; calls={len(self.app.actual_calls)}',
-            "['', '']; False; calls=4")
+        for _ in range(2):
+            contains(self.vm.tags, 'tag')
+            list(self.vm.tags)
+        self.assertEqual(len(self.app.actual_calls), 4)
 
     def test_vm_caches_are_independent(self) -> None:
         self.expect_read('Get', b'0\x001', 'tag')

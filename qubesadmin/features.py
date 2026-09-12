@@ -60,7 +60,6 @@ class Features:
     def record_value(self, key: str, value: str) -> None:
         '''Cache a feature value confirmed by qubesd.'''
         if not self.vm.app.cache_enabled:
-            self.clear_cache()
             return
         self._missing_cache.pop(key, None)
         self._values_cache[key] = value
@@ -70,7 +69,6 @@ class Features:
     def record_removal(self, key: str) -> None:
         '''Drop a feature that qubesd confirmed as removed.'''
         if not self.vm.app.cache_enabled:
-            self.clear_cache()
             return
         self._values_cache.pop(key, None)
         if self._names_cache is not None and key in self._names_cache:
@@ -91,8 +89,6 @@ class Features:
         self.record_value(key, serialized)
 
     def __getitem__(self, item: str) -> str:
-        if not self.vm.app.cache_enabled:
-            self.clear_cache()
         if item in self._values_cache:
             return self._values_cache[item]
         if item in self._missing_cache:
@@ -110,8 +106,6 @@ class Features:
         return value
 
     def __iter__(self) -> Iterator[str]:
-        if not self.vm.app.cache_enabled:
-            self.clear_cache()
         if self._names_cache is not None:
             return iter(self._names_cache)
         qubesd_response = self.vm.qubesd_call(self.vm.name,
@@ -152,8 +146,6 @@ class Features:
     def check_with_template(self, feature: str,
                             default: object = None) -> object:
         ''' Check if the vm's template has the specified feature. '''
-        if not self.vm.app.cache_enabled:
-            self.clear_cache()
         try:
             qubesd_response = self.vm.qubesd_call(
                 self.vm.name, 'admin.vm.feature.CheckWithTemplate', feature)

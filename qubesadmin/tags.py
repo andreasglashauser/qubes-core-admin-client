@@ -49,7 +49,6 @@ class Tags:
     def record_membership(self, elem: str, is_present: bool) -> None:
         '''Cache tag membership confirmed by qubesd.'''
         if not self.vm.app.cache_enabled:
-            self.clear_cache()
             return
         self._membership_cache[elem] = is_present
         if self._names_cache is None:
@@ -83,8 +82,6 @@ class Tags:
             pass
 
     def __iter__(self) -> Iterator[str]:
-        if not self.vm.app.cache_enabled:
-            self.clear_cache()
         if self._names_cache is not None:
             return iter(self._names_cache)
         qubesd_response = self.vm.qubesd_call(self.vm.name,
@@ -96,8 +93,6 @@ class Tags:
 
     def __contains__(self, elem: str) -> bool:
         '''Does the VM have a tag'''
-        if not self.vm.app.cache_enabled:
-            self.clear_cache()
         if elem in self._membership_cache:
             return self._membership_cache[elem]
         response = self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Get', elem)
