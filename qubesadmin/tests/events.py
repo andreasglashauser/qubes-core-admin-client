@@ -274,48 +274,54 @@ class TC_10_FeatureTagEvents(qubesadmin.tests.QubesTestCase):
         self.vm = self.app.domains.get_blind('test-vm')
         self.other_vm = self.app.domains.get_blind('other-vm')
 
-    def prime_caches(self) -> None:
+    def prime_caches(self, has_tag: bool = False) -> None:
+        primed, changed = (b'1', b'0') if has_tag else (b'0', b'1')
         for vm in (self.vm, self.other_vm):
             vm.features.clear_cache()
             vm.tags.clear_cache()
             self.app.expected_calls[
                 (vm.name, 'admin.vm.feature.Get', 'feature', None)] = b'0\0old'
             self.app.expected_calls[
-                (vm.name, 'admin.vm.tag.Get', 'tag', None)] = b'0\x000'
+                (vm.name, 'admin.vm.tag.Get', 'tag', None)] = b'0\0' + primed
             self.read_snapshot(vm)
             self.app.expected_calls[
                 (vm.name, 'admin.vm.feature.Get', 'feature', None)] = b'0\0new'
             self.app.expected_calls[
-                (vm.name, 'admin.vm.tag.Get', 'tag', None)] = b'0\x001'
+                (vm.name, 'admin.vm.tag.Get', 'tag', None)] = b'0\0' + changed
         self.app.actual_calls.clear()
 
     @staticmethod
     def read_snapshot(vm: qubesadmin.vm.QubesVM) -> str:
         return f'{vm.features["feature"]}, {"tag" in vm.tags}'
 
-    def read_callback_snapshots(self, event: str) -> str:
+    def read_callback_snapshots(self, event: str, **kwargs: str) -> str:
         snapshots = []
         def record_snapshot(subject: QubesVM, _event: str, **_kwargs) -> None:
             snapshots.append(self.read_snapshot(subject))
         dispatcher = qubesadmin.events.EventsDispatcher(self.app)
         dispatcher.add_handler(event, record_snapshot)
-        dispatcher.handle('test-vm', event)
+        dispatcher.handle('test-vm', event, **kwargs)
         return '; '.join(snapshots)
 
-    def test_change_events_invalidate_before_callbacks(self) -> None:
-        for event, expected in (
-                ('domain-feature-set:feature', 'new, False'),
-                ('domain-feature-delete:feature', 'new, False'),
-                ('domain-tag-add:tag', 'old, True'),
-                ('domain-tag-delete:tag', 'old, True')):
+    def test_change_events_update_cache_before_callbacks(self) -> None:
+        for event, kwargs, has_tag, expected in (
+                ('domain-feature-set:feature',
+                 {'feature': 'feature', 'value': 'new'}, False,
+                 'new, False; calls=0'),
+                ('domain-feature-delete:feature', {'feature': 'feature'},
+                 False, 'new, False; calls=1'),
+                ('domain-tag-add:tag', {'tag': 'tag'}, False,
+                 'old, True; calls=0'),
+                ('domain-tag-delete:tag', {'tag': 'tag'}, True,
+                 'old, False; calls=0')):
             with self.subTest(event=event):
-                self.prime_caches()
-                snapshots = self.read_callback_snapshots(event)
+                self.prime_caches(has_tag)
+                snapshots = self.read_callback_snapshots(event, **kwargs)
                 other = self.read_snapshot(self.other_vm)
                 self.assertEqual(
-                    f'{snapshots}; other={other}; '
-                    f'calls={len(self.app.actual_calls)}',
-                    f'{expected}; other=old, False; calls=1')
+                    f'{snapshots}; calls={len(self.app.actual_calls)}; '
+                    f'other={other}',
+                    f'{expected}; other=old, {has_tag}')
 
     def test_pre_change_events_preserve_cache(self) -> None:
         self.prime_caches()

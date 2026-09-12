@@ -57,19 +57,38 @@ class Features:
         self._missing_cache.clear()
         self._names_cache = None
 
+    def record_value(self, key: str, value: str) -> None:
+        '''Cache a feature value confirmed by qubesd.'''
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+            return
+        self._missing_cache.pop(key, None)
+        self._values_cache[key] = value
+        if self._names_cache is not None and key not in self._names_cache:
+            self._names_cache.append(key)
+
+    def record_removal(self, key: str) -> None:
+        '''Drop a feature that qubesd confirmed as removed.'''
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+            return
+        self._values_cache.pop(key, None)
+        if self._names_cache is not None and key in self._names_cache:
+            self._names_cache.remove(key)
+
     def __delitem__(self, key: str) -> None:
-        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Remove', key)
+        self.record_removal(key)
 
     def __setitem__(self, key: str, value: object) -> None:
-        self.clear_cache()
         if isinstance(value, bool):
             # False value needs to be serialized as empty string
-            self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Set', key,
-                b'1' if value else b'')
+            serialized = '1' if value else ''
         else:
-            self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Set', key,
-                str(value).encode())
+            serialized = str(value)
+        self.vm.qubesd_call(self.vm.name, 'admin.vm.feature.Set', key,
+                            serialized.encode())
+        self.record_value(key, serialized)
 
     def __getitem__(self, item: str) -> str:
         if not self.vm.app.cache_enabled:
@@ -77,7 +96,6 @@ class Features:
         if item in self._values_cache:
             return self._values_cache[item]
         if item in self._missing_cache:
-            # QubesException formats messages even without arguments.
             raise QubesFeatureNotFoundError(
                 self._missing_cache[item].replace('%', '%%'))
         try:

@@ -21,9 +21,9 @@
 # pylint: disable=missing-docstring
 
 from operator import contains
-from functools import partial
 from unittest.mock import Mock, patch
 
+from qubesadmin.exc import PermissionDenied
 import qubesadmin.tests
 import qubesadmin.tags
 
@@ -257,14 +257,41 @@ class TC_10_TagCache(qubesadmin.tests.QubesTestCase):
             f'total calls={len(self.app.actual_calls)}',
             'False; new; calls after clear=2; total calls=4')
 
-    def test_mutations_clear_cache_before_request(self) -> None:
+    def read_membership_and_names(self) -> str:
+        return f'{"tag" in self.vm.tags}, {",".join(self.vm.tags)}'
+
+    def test_writes_update_cache(self) -> None:
+        self.expect_read('List', b'0\0other\n')
+        self.expect_read('Get', b'0\x000', 'tag')
+        before = self.read_membership_and_names()
+        self.expect_read('Set', b'0\0', 'tag')
+        self.vm.tags.add('tag')
+        after_add = self.read_membership_and_names()
+        self.expect_read('Remove', b'0\0', 'tag')
+        self.vm.tags.remove('tag')
+        after_removal = self.read_membership_and_names()
+        self.assertEqual(
+            f'{before}; {after_add}; {after_removal}; '
+            f'calls={len(self.app.actual_calls)}',
+            'False, other; True, other,tag; False, other; calls=4')
+
+    def test_failed_writes_keep_cache(self) -> None:
         for method, mutation in (('Set', self.vm.tags.add),
                                  ('Remove', self.vm.tags.remove)):
-            for has_error in (False, True):
-                with self.subTest(method=method, has_error=has_error):
-                    self.assertCacheClearedBeforeQubesdCall(
-                        self.vm.tags, partial(mutation, 'tag'),
-                        has_error=has_error)
+            with self.subTest(method=method):
+                self.vm.tags.clear_cache()
+                self.app.actual_calls.clear()
+                self.expect_read('Get', b'0\x001', 'tag')
+                self.expect_read('List', b'0\0tag\n')
+                before = self.read_membership_and_names()
+                self.expect_read(method, b'2\0PermissionDenied\0\0denied\0',
+                                 'tag')
+                with self.assertRaises(PermissionDenied):
+                    mutation('tag')
+                self.assertEqual(
+                    f'{before}; {self.read_membership_and_names()}; '
+                    f'calls={len(self.app.actual_calls)}',
+                    'True, tag; True, tag; calls=3')
 
     def test_update_discard_delegation(self) -> None:
         calls = Mock()

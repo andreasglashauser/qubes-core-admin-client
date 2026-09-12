@@ -25,7 +25,7 @@ from operator import delitem, setitem
 from unittest.mock import patch
 
 import qubesadmin.features
-from qubesadmin.exc import QubesFeatureNotFoundError
+from qubesadmin.exc import PermissionDenied, QubesFeatureNotFoundError
 import qubesadmin.tests
 
 
@@ -263,14 +263,62 @@ class TC_10_FeatureCache(qubesadmin.tests.QubesTestCase):
             f'{values!r}; calls={len(self.app.actual_calls)}',
             "['first', 'other', 'first', 'other']; calls=2")
 
-    def test_mutations_clear_cache_before_request(self) -> None:
-        for method, mutation in (
-                ('Set', partial(setitem, self.vm.features, 'feature', 'write')),
-                ('Remove', partial(delitem, self.vm.features, 'feature'))):
-            for has_error in (False, True):
-                with self.subTest(method=method, has_error=has_error):
-                    self.assertCacheClearedBeforeQubesdCall(
-                        self.vm.features, mutation, has_error=has_error)
+    def read_value_and_names(self) -> str:
+        return (f'{self.vm.features.get("feature")}, '
+                f'{",".join(self.vm.features)}')
+
+    def test_set_caches_serialized_value(self) -> None:
+        for value, stored in (('write', 'write'), (True, '1'), (False, '')):
+            with self.subTest(value=value):
+                self.vm.features.clear_cache()
+                self.app.actual_calls.clear()
+                self.app.expected_calls[('test-vm', 'admin.vm.feature.Set',
+                                         'feature', stored.encode())] = b'0\0'
+                self.vm.features['feature'] = value
+                self.assertEqual(
+                    f'{self.vm.features["feature"]!r}; '
+                    f'calls={len(self.app.actual_calls)}',
+                    f'{stored!r}; calls=1')
+
+    def test_writes_update_names_and_missing(self) -> None:
+        self.expect_read('List', b'0\0other\n')
+        self.expect_read('Get',
+            b'2\0QubesFeatureNotFoundError\0\0missing\0', 'feature')
+        before = self.read_value_and_names()
+        self.app.expected_calls[
+            ('test-vm', 'admin.vm.feature.Set', 'feature', b'write')] = b'0\0'
+        self.vm.features['feature'] = 'write'
+        after_set = self.read_value_and_names()
+        self.app.expected_calls[
+            ('test-vm', 'admin.vm.feature.Remove', 'feature', None)] = b'0\0'
+        del self.vm.features['feature']
+        after_removal = self.read_value_and_names()
+        self.assertEqual(
+            f'{before}; {after_set}; {after_removal}; '
+            f'calls={len(self.app.actual_calls)}',
+            'None, other; write, other,feature; None, other; calls=5')
+
+    def test_failed_writes_keep_cache(self) -> None:
+        for method, payload, mutation in (
+                ('Set', b'write',
+                 partial(setitem, self.vm.features, 'feature', 'write')),
+                ('Remove', None,
+                 partial(delitem, self.vm.features, 'feature'))):
+            with self.subTest(method=method):
+                self.vm.features.clear_cache()
+                self.app.actual_calls.clear()
+                self.expect_read('Get', b'0\0old', 'feature')
+                self.expect_read('List', b'0\0feature\n')
+                before = self.read_value_and_names()
+                self.app.expected_calls[
+                    ('test-vm', f'admin.vm.feature.{method}', 'feature',
+                     payload)] = b'2\0PermissionDenied\0\0denied\0'
+                with self.assertRaises(PermissionDenied):
+                    mutation()
+                self.assertEqual(
+                    f'{before}; {self.read_value_and_names()}; '
+                    f'calls={len(self.app.actual_calls)}',
+                    'old, feature; old, feature; calls=3')
 
     def test_template_checks_always_use_server(self) -> None:
         self.expect_read('Get', b'0\0direct', 'feature')

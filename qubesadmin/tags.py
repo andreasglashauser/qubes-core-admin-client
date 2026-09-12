@@ -46,15 +46,28 @@ class Tags:
         self._membership_cache.clear()
         self._names_cache = None
 
+    def record_membership(self, elem: str, is_present: bool) -> None:
+        '''Cache tag membership confirmed by qubesd.'''
+        if not self.vm.app.cache_enabled:
+            self.clear_cache()
+            return
+        self._membership_cache[elem] = is_present
+        if self._names_cache is None:
+            return
+        if is_present and elem not in self._names_cache:
+            self._names_cache.append(elem)
+        if not is_present and elem in self._names_cache:
+            self._names_cache.remove(elem)
+
     def remove(self, elem: str) -> None:
         '''Remove a tag'''
-        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Remove', elem)
+        self.record_membership(elem, False)
 
     def add(self, elem: str) -> None:
         '''Add a tag'''
-        self.clear_cache()
         self.vm.qubesd_call(self.vm.name, 'admin.vm.tag.Set', elem)
+        self.record_membership(elem, True)
 
     def update(self, *others) -> None:
         '''Add tags from iterable(s)'''
