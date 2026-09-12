@@ -77,8 +77,6 @@ class QubesVM(qubesadmin.base.PropertyHolder):
 
     @name.setter
     def name(self, new_value):
-        self.features.clear_cache()
-        self.tags.clear_cache()
         self.qubesd_call(
             self._method_dest,
             self._method_prefix + "Set",

@@ -313,25 +313,3 @@ class TC_01_SpecialCases(qubesadmin.tests.vm.VMTestCase):
             b"0\x00test-vm class=AppVM state=Running\n"
         self.assertEqual(vm.klass, "AppVM")
         self.assertAllCalled()
-
-
-class TC_02_RenameContainerCaches(qubesadmin.tests.QubesTestCase):
-    def test_rename_discards_feature_and_tag_cache(self) -> None:
-        self.app.cache_enabled = True
-        vm = self.app.domains.get_blind('old-name')
-        self.app.expected_calls[
-            ('old-name', 'admin.vm.feature.Get', 'feature', None)] = b'0\0old'
-        self.app.expected_calls[
-            ('old-name', 'admin.vm.tag.Get', 'tag', None)] = b'0\x000'
-        before = f'{vm.features["feature"]}, {"tag" in vm.tags}'
-        self.app.expected_calls[
-            ('old-name', 'admin.vm.property.Set', 'name', b'new-name')] = b'0\0'
-        self.app.expected_calls[
-            ('new-name', 'admin.vm.feature.Get', 'feature', None)] = b'0\0new'
-        self.app.expected_calls[
-            ('new-name', 'admin.vm.tag.Get', 'tag', None)] = b'0\x001'
-        vm.name = 'new-name'
-        after = f'{vm.features["feature"]}, {"tag" in vm.tags}'
-        self.assertEqual(
-            f'{before}; {after}; calls={len(self.app.actual_calls)}',
-            'old, False; new, True; calls=5')

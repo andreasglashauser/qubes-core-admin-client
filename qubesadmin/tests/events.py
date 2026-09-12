@@ -328,16 +328,6 @@ class TC_10_FeatureTagEvents(qubesadmin.tests.QubesTestCase):
             f'{snapshot}; calls={len(self.app.actual_calls)}',
             'old, False; calls=0')
 
-    def test_rename_event_invalidates_both_caches(self) -> None:
-        self.prime_caches()
-        self.dispatcher.handle('test-vm', 'property-set:name', name='name',
-                               newvalue='new-name', oldvalue='test-vm')
-        snapshot = self.read_snapshot(self.vm)
-        other = self.read_snapshot(self.other_vm)
-        self.assertEqual(
-            f'{snapshot}; other={other}; calls={len(self.app.actual_calls)}',
-            'new, True; other=old, False; calls=2')
-
     def test_reconnection_invalidates_before_callbacks(self) -> None:
         flow = []
         def record_reconnection(_subject: QubesVM | None, _event: str) -> None:

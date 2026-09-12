@@ -228,11 +228,8 @@ class EventsDispatcher:
         '''Invalidate direct feature and tag reads before event callbacks.'''
         if subject is None:
             return
-        if event == 'property-set:name':
-            subject.features.clear_cache()
-            subject.tags.clear_cache()
-        elif event.startswith(('domain-feature-set:',
-                               'domain-feature-delete:')):
+        if event.startswith(('domain-feature-set:',
+                             'domain-feature-delete:')):
             subject.features.clear_cache()
         elif event.startswith(('domain-tag-add:', 'domain-tag-delete:')):
             subject.tags.clear_cache()
